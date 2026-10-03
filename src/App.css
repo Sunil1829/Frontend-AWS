@@ -1,0 +1,6 @@
+/* Additional utility styles for SecureLearn portal */
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
