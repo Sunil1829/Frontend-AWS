@@ -1,49 +1,44 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import contentService from '../services/contentService';
 import courseService from '../services/courseService';
 import VideoPlayer from '../components/VideoPlayer';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { ShieldCheck, ArrowLeft, AlertCircle, RefreshCw, Lock } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 const WatchCoursePage = () => {
   const { id } = useParams();
+  const { user } = useAuth();
+  const { addToast } = useToast();
   const courseId = Number(id) || id;
 
   const [course, setCourse] = useState(null);
   const [videoUrl, setVideoUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // Real progress state
+  const savedProgress = parseFloat(localStorage.getItem(`securelearn_progress_${user?.userId}_${courseId}`) || '0');
+  const [currentProgress, setCurrentProgress] = useState(savedProgress);
+  const [sessionTimeLeft, setSessionTimeLeft] = useState(1800); // 30 minutes
 
   const fetchPresignedUrl = useCallback(async () => {
     setLoading(true);
-    setError('');
     try {
-      // 1. Fetch course metadata
-      try {
-        const courseData = await courseService.getCourseById(courseId);
-        setCourse(courseData);
-      } catch (e) {
-        setCourse({ id: courseId });
-      }
+      const courseData = await courseService.getCourseById(courseId).catch(() => ({ id: courseId, title: `Course ${courseId}` }));
+      setCourse(courseData);
 
-      // 2. Request S3 Presigned URL from backend GET /api/content/{courseId}
       const url = await contentService.getCourseContentUrl(courseId);
       if (url) {
         setVideoUrl(url);
+        setSessionTimeLeft(1800); // Reset timer to 30 minutes
       } else {
         throw new Error('No presigned URL returned from backend');
       }
     } catch (err) {
-      console.error('Error fetching presigned URL:', err);
-      const status = err.response?.status;
-      if (status === 403) {
-        setError('You are not enrolled in this course.');
-      } else if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else {
-        setError('Could not retrieve S3 Presigned URL. Please check your backend connection.');
-      }
+      setError(err.response?.status === 403 ? 'You are not enrolled.' : 'Access Error');
     } finally {
       setLoading(false);
     }
@@ -53,51 +48,88 @@ const WatchCoursePage = () => {
     fetchPresignedUrl();
   }, [fetchPresignedUrl]);
 
+  // Session countdown effect
+  useEffect(() => {
+    if (loading || error) return;
+    const interval = setInterval(() => {
+      setSessionTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          addToast('⚠ Session expired', 'error');
+          return 0;
+        }
+        if (prev === 300) addToast('⚠ Session expiring soon', 'warning');
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [loading, error, addToast]);
+
+  const handleRenewSession = async () => {
+    await fetchPresignedUrl();
+    addToast('✓ Session renewed', 'success');
+  };
+
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
   return (
-    <div className="watch-page-container">
-      {/* Header bar */}
-      <div className="watch-header">
+    <div className="watch-page-premium">
+      <div className="watch-header-premium">
         <Link to={`/courses/${courseId}`} className="back-link">
-          <ArrowLeft size={16} />
-          <span>Back to Course Details</span>
+          <ArrowLeft size={16} /> Back to course
         </Link>
-        <div className="watch-badge">
-          <ShieldCheck size={16} className="text-accent" />
-          <span>AWS S3 Presigned Video Session</span>
-        </div>
+        <div className="course-title-header">{course?.title}</div>
+        <div className="learning-state-header">Progress: {Math.round(currentProgress)}%</div>
       </div>
 
-      <div className="watch-content-wrapper">
-        <h1 className="watch-title">{course?.title || 'Watch Course Video'}</h1>
-
+      <div className="video-cinema-container">
         {loading ? (
-          <LoadingSpinner message="Authenticating session & generating AWS S3 Presigned URL..." />
+          <LoadingSpinner />
         ) : error ? (
-          <div className="watch-error-card empty-state-container">
-            <AlertCircle size={48} className="text-danger mb-3" />
-            <h3>{error.includes('enrolled') ? 'Enrollment Required' : 'Access Error'}</h3>
-            <p className="empty-description">{error}</p>
-            <div className="error-actions mt-4">
-              <button onClick={fetchPresignedUrl} className="btn-secondary me-3">
-                <RefreshCw size={16} />
-                <span>Retry</span>
-              </button>
-              <Link to={`/courses/${courseId}`} className="btn-primary">
-                <Lock size={16} />
-                <span>View Course Details</span>
-              </Link>
-            </div>
+          <div className="error-card"><AlertCircle/> {error}</div>
+        ) : sessionTimeLeft === 0 ? (
+          <div className="session-expired-overlay">
+            <h3>Secure session expired.</h3>
+            <p>Your temporary viewing URL has expired.</p>
+            <button className="btn-primary" onClick={handleRenewSession}>Renew Secure Session</button>
           </div>
         ) : (
-          <div className="watch-player-wrapper">
-            <VideoPlayer
-              videoUrl={videoUrl}
-              title={course?.title}
-              onRefreshUrl={fetchPresignedUrl}
-            />
-          </div>
+          <VideoPlayer
+            videoUrl={videoUrl}
+            courseId={courseId}
+            userId={user?.userId}
+            onProgressUpdate={setCurrentProgress}
+            initialProgress={savedProgress}
+          />
         )}
       </div>
+
+      {!loading && !error && (
+        <div className="learning-info-panel">
+          <div className="course-meta">
+            <h2>{course?.title}</h2>
+            <p>{course?.description}</p>
+            {currentProgress > 90 && <div className="completed-badge">✓ Completed</div>}
+          </div>
+          <div className="secure-session-panel">
+            <h4>SECURE VIDEO SESSION</h4>
+            <div className="sec-checks">
+              <div>✓ Authenticated</div>
+              <div>✓ Enrollment verified</div>
+              <div>✓ Private S3 source</div>
+            </div>
+            <div className="temporary-access">
+              <span className="text-muted">Temporary access</span>
+              <span className="countdown">{formatTime(sessionTimeLeft)} remaining</span>
+            </div>
+            <button className="btn-ghost-small mt-3" onClick={handleRenewSession}><RefreshCw size={14}/> Renew Now</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

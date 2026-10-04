@@ -1,55 +1,47 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import courseService from '../services/courseService';
 import enrollmentService from '../services/enrollmentService';
 import CourseCard from '../components/CourseCard';
-import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
-import { Shield, BookOpen, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Search, Sparkles, BookOpen, CheckCircle2, PlayCircle, ShieldCheck } from 'lucide-react';
+import { getCourseVisual } from '../utils/courseVisuals';
+import { AlertCircle } from "lucide-react";
+import LoadingSkeleton from '../components/common/LoadingSkeleton';
 
 const DashboardPage = () => {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [courses, setCourses] = useState([]);
   const [enrolledMap, setEnrolledMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filter, setFilter] = useState('all'); // 'all' | 'enrolled'
 
   const fetchCoursesAndEnrollments = useCallback(async () => {
     setLoading(true);
-    setError('');
     try {
-      // 1. Fetch live courses from Spring Boot backend GET /api/courses
       const data = await courseService.getAllCourses();
       const courseList = Array.isArray(data) ? data : (data?.content || []);
       setCourses(courseList);
 
-      // 2. Check enrollment status for each course if user is logged in
       if (user?.userId && courseList.length > 0) {
-        const enrollmentStatusObj = {};
+        const statusMap = {};
         await Promise.all(
-          courseList.map(async (course) => {
+          courseList.map(async (c) => {
             try {
-              const isEnrolled = await enrollmentService.checkEnrollment(user.userId, course.id);
-              enrollmentStatusObj[course.id] = isEnrolled;
+              const enrolled = await enrollmentService.checkEnrollment(user.userId, c.id);
+              statusMap[c.id] = enrolled;
             } catch (e) {
-              enrollmentStatusObj[course.id] = false;
+              statusMap[c.id] = false;
             }
           })
         );
-        setEnrolledMap(enrollmentStatusObj);
+        setEnrolledMap(statusMap);
       }
     } catch (err) {
-      console.error('Error fetching course data from backend:', err);
-      let message = 'Failed to load courses from backend server.';
-      if (err.response?.data?.message) {
-        message = err.response.data.message;
-      } else if (typeof err.response?.data === 'string') {
-        message = err.response.data;
-      } else if (err.request) {
-        message = 'Unable to connect to Spring Boot server (http://localhost:8080). Please ensure your backend is running.';
-      }
-      setError(message);
+      setError('Failed to load course catalog.');
     } finally {
       setLoading(false);
     }
@@ -59,97 +51,111 @@ const DashboardPage = () => {
     fetchCoursesAndEnrollments();
   }, [fetchCoursesAndEnrollments]);
 
-  const displayedCourses = courses.filter((course) => {
-    if (filter === 'enrolled') {
-      return Boolean(enrolledMap[course.id]);
-    }
-    return true;
-  });
+  const enrolledCount = Object.values(enrolledMap).filter(Boolean).length;
+  
+  // Recent course
+  const recentCourse = courses.find(c => enrolledMap[c.id]);
+  const recentProgress = recentCourse ? parseFloat(localStorage.getItem(`securelearn_progress_${user?.userId}_${recentCourse.id}`) || '0') : 0;
+
+  // Recommended courses (not enrolled)
+  const recommendedCourses = courses.filter(c => !enrolledMap[c.id]).slice(0, 3);
 
   return (
     <div className="dashboard-container">
-      {/* Hero Header Section */}
-      <section className="dashboard-hero">
+      {/* SECTION A — PERSONALIZED HERO */}
+      <section className="premium-hero">
         <div className="hero-content">
-          <div className="hero-pill">
-            <Shield size={15} />
-            <span>AWS S3 Presigned URL Content Platform</span>
-          </div>
-          <h1 className="hero-title">
-            Secure Digital Learning <br />
-            <span className="text-gradient">Powered by AWS</span>
-          </h1>
-          <p className="hero-subtitle">
-            Explore available technical courses. Enrolled users gain authorized access to stream video content directly from private S3 buckets using temporary presigned URLs.
-          </p>
-        </div>
-      </section>
-
-      {/* Course Catalog Controls */}
-      <section className="catalog-section">
-        <div className="catalog-header">
-          <div className="catalog-title-group">
-            <h2>Course Catalog</h2>
-            <p>Select a course to view details, enroll, or watch protected video streams.</p>
-          </div>
-
-          <div className="tab-filters">
-            <button
-              onClick={() => setFilter('all')}
-              className={`tab-btn ${filter === 'all' ? 'active' : ''}`}
-            >
-              <BookOpen size={16} />
-              <span>All Courses ({courses.length})</span>
-            </button>
-            {isAuthenticated && (
-              <button
-                onClick={() => setFilter('enrolled')}
-                className={`tab-btn ${filter === 'enrolled' ? 'active' : ''}`}
-              >
-                <CheckCircle2 size={16} />
-                <span>My Enrolled ({Object.values(enrolledMap).filter(Boolean).length})</span>
-              </button>
+          <div className="hero-greeting">WELCOME BACK, {user?.name?.toUpperCase() || 'STUDENT'}</div>
+          <h1 className="hero-title">Learn smarter.<br />Access securely.</h1>
+          <p className="hero-subtitle">Your learning space for secure, on-demand content.</p>
+          <div className="hero-actions">
+            <button className="btn-secondary" onClick={() => navigate('/courses')}>Explore Courses</button>
+            {recentCourse && (
+              <button className="btn-primary-glow" onClick={() => navigate(`/watch/${recentCourse.id}`)}>Continue Learning</button>
             )}
           </div>
         </div>
+        <div className="abstract-core">
+          <ShieldCheck size={80} className="text-cyan glowing-icon" style={{color: 'var(--cyan-primary)'}} />
+          <div className="orbital-ring ring-1"></div>
+          <div className="orbital-ring ring-2"></div>
+        </div>
+      </section>
 
-        {/* Content Display */}
-        {loading ? (
-          <LoadingSpinner message="Fetching live course catalog from Spring Boot API..." />
-        ) : error ? (
-          <div className="empty-state-container">
-            <div className="empty-icon-wrapper text-danger" style={{ background: 'rgba(239, 68, 68, 0.1)' }}>
-              <AlertCircle size={40} className="text-danger" />
-            </div>
-            <h3 className="empty-title">Backend Connection Error</h3>
-            <p className="empty-description">{error}</p>
-            <button onClick={fetchCoursesAndEnrollments} className="btn-primary">
-              <RefreshCw size={16} />
-              <span>Retry Connection</span>
-            </button>
+      {/* SECTION B — LEARNING OVERVIEW */}
+      <section className="stats-overview">
+        <div className="stat-card">
+          <BookOpen size={24} className="text-cyan" style={{color: 'var(--cyan-primary)'}} />
+          <div className="stat-info">
+            <span className="stat-value">{courses.length}</span>
+            <span className="stat-label">Courses Available</span>
           </div>
-        ) : displayedCourses.length === 0 ? (
-          <EmptyState
-            title={filter === 'enrolled' ? 'No Enrolled Courses' : 'No Courses Available'}
-            description={
-              filter === 'enrolled'
-                ? 'You have not enrolled in any courses yet. Browse the catalog and click Enroll!'
-                : 'No course items returned by the backend API.'
-            }
-            onRetry={fetchCoursesAndEnrollments}
-          />
-        ) : (
-          <div className="courses-grid">
-            {displayedCourses.map((course) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                isEnrolled={Boolean(enrolledMap[course.id])}
+        </div>
+        <div className="stat-card">
+          <Sparkles size={24} className="text-purple" style={{color: 'var(--violet-secondary)'}} />
+          <div className="stat-info">
+            <span className="stat-value">{enrolledCount}</span>
+            <span className="stat-label">Courses Enrolled</span>
+          </div>
+        </div>
+        <div className="stat-card">
+          <CheckCircle2 size={24} className="text-success" style={{color: 'var(--success-emerald)'}} />
+          <div className="stat-info">
+            <span className="stat-value">
+              {courses.filter(c => parseFloat(localStorage.getItem(`securelearn_progress_${user?.userId}_${c.id}`) || '0') > 90).length}
+            </span>
+            <span className="stat-label">Courses Completed</span>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION C — CONTINUE LEARNING */}
+      {recentCourse && (
+        <section className="continue-learning-section">
+          <h2 className="section-title" style={{marginBottom: '1rem'}}>Continue Learning</h2>
+          <div className="continue-card">
+            <div className="continue-visual" style={{ background: getCourseVisual(recentCourse).gradient }}>
+              <PlayCircle size={48} opacity={0.8} />
+            </div>
+            <div className="continue-info">
+              <h3>{recentCourse.title}</h3>
+              <div className="continue-progress">
+                <div className="progress-info" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                  <span>In Progress</span>
+                  <span>{Math.round(recentProgress)}%</span>
+                </div>
+                <div className="progress-bar-bg">
+                  <div className="progress-bar-fill" style={{ width: `${recentProgress}%` }}></div>
+                </div>
+              </div>
+            </div>
+            <div style={{paddingRight: '1.5rem'}}>
+              <button className="btn-primary" onClick={() => navigate(`/watch/${recentCourse.id}`)}>Resume Course</button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* RECOMMENDED COURSES */}
+      {recommendedCourses.length > 0 && (
+        <section className="course-discovery" style={{marginTop: '2rem'}}>
+          <div className="course-discovery-header">
+            <h2 className="section-title">Recommended for you</h2>
+            <button className="btn-ghost" onClick={() => navigate('/courses')}>View All</button>
+          </div>
+          
+          <div className="premium-grid">
+            {recommendedCourses.map((course) => (
+              <CourseCard 
+                key={course.id} 
+                course={course} 
+                enrollmentStatus={false} 
+                progress={0}
               />
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 };

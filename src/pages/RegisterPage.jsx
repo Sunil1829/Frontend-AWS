@@ -1,204 +1,111 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { ShieldCheck, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 import authService from '../services/authService';
-import { ShieldCheck, User, Mail, Lock, UserPlus, AlertCircle, CheckCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
 
 const RegisterPage = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-
+  const [error, setError] = useState('');
+  
   const navigate = useNavigate();
+  const { addToast } = useToast();
+
+  const getPasswordStrength = () => {
+    if (password.length === 0) return 0;
+    if (password.length < 6) return 1;
+    if (password.length < 8) return 2;
+    return 3;
+  };
+  const strength = getPasswordStrength();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-
-    // Frontend validation
-    if (!name.trim()) {
-      setError('Full name is required.');
-      return;
-    }
-    if (!email.trim()) {
-      setError('Email address is required.');
-      return;
-    }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-
     setLoading(true);
-
+    setError('');
     try {
-      await authService.register({ name: name.trim(), email: email.trim(), password });
-      setSuccess(true);
-      setTimeout(() => {
-        navigate('/login');
-      }, 1500);
+      await authService.register({ name, email, password });
+      addToast('✓ Registration successful', 'success');
+      navigate('/login');
     } catch (err) {
-      console.error('Registration request failed:', err);
-      let message = 'Registration failed. Please try again.';
-      if (err.response) {
-        if (typeof err.response.data === 'string') {
-          message = err.response.data;
-        } else if (err.response.data?.message) {
-          message = err.response.data.message;
-        } else if (err.response.data?.error) {
-          message = err.response.data.error;
-        } else if (err.response.status === 400) {
-          message = 'Invalid user data provided. Please check all fields.';
-        } else if (err.response.status === 409) {
-          message = 'An account with this email address already exists.';
-        }
-      } else if (err.request) {
-        message = 'Unable to connect to registration server. Please check your backend connection.';
-      }
-      setError(message);
+      setError(err.response?.data?.message || 'Registration failed.');
+      addToast('✕ Registration failed', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="auth-page-container">
-      <div className="auth-card">
-        <div className="auth-header">
-          <div className="auth-logo-badge">
-            <ShieldCheck size={32} />
-          </div>
-          <h2 className="auth-title">Create Account</h2>
-          <p className="auth-subtitle">Join Secure<span className="text-gradient">Learn</span> to enroll in courses and access AWS S3 content</p>
+    <div className="auth-split-layout">
+      <div className="auth-visual-side">
+        <div className="auth-brand">
+          <ShieldCheck size={32} className="text-cyan" />
+          <span>SecureLearn</span>
         </div>
-
-        {error && (
-          <div className="auth-error-alert" role="alert">
-            <AlertCircle size={18} className="flex-shrink-0" />
-            <span>{error}</span>
+        <div className="auth-visual-content">
+          <h1>Start Your Journey.</h1>
+          <p>Join the premium platform designed for professionals.</p>
+          
+          <div className="auth-features">
+            <div className="feature-item"><ShieldCheck size={16} className="text-cyan"/> Secure access</div>
+            <div className="feature-item"><ShieldCheck size={16} className="text-cyan"/> Private S3 content</div>
+            <div className="feature-item"><ShieldCheck size={16} className="text-cyan"/> Temporary protected delivery</div>
           </div>
-        )}
 
-        {success && (
-          <div className="auth-success-alert" role="status">
-            <CheckCircle size={18} className="flex-shrink-0" />
-            <span>Registration successful! Redirecting to Sign In...</span>
+          <div className="abstract-visual">
+            <div className="orbital-ring ring-1"></div>
+            <div className="orbital-ring ring-2"></div>
+            <ShieldCheck size={64} className="glowing-icon text-cyan" />
           </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="auth-form" noValidate>
-          <div className="form-group">
-            <label htmlFor="name">Full Name</label>
-            <div className="input-wrapper">
-              <User className="input-icon" size={18} />
-              <input
-                id="name"
-                type="text"
-                required
-                autoComplete="name"
-                placeholder="John Doe"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+        </div>
+      </div>
+      
+      <div className="auth-form-side">
+        <div className="auth-form-container">
+          <h2>Create account</h2>
+          <p className="text-muted">Fill in your details to get started.</p>
+          
+          {error && <div className="form-error"><AlertCircle size={16}/> {error}</div>}
+          
+          <form onSubmit={handleSubmit} className="premium-form">
+            <div className="form-group">
+              <label>Full Name</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="John Doe" />
             </div>
-          </div>
 
-          <div className="form-group">
-            <label htmlFor="email">Email Address</label>
-            <div className="input-wrapper">
-              <Mail className="input-icon" size={18} />
-              <input
-                id="email"
-                type="email"
-                required
-                autoComplete="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+            <div className="form-group">
+              <label>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="name@example.com" />
             </div>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <div className="input-wrapper">
-              <Lock className="input-icon" size={18} />
-              <input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                required
-                autoComplete="new-password"
-                placeholder="At least 6 characters"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button
-                type="button"
-                className="password-toggle-btn"
-                onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+            
+            <div className="form-group">
+              <label>Password</label>
+              <div className="password-input-wrapper">
+                <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" />
+                <button type="button" className="toggle-password" onClick={() => setShowPassword(!showPassword)}>
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <div className="password-strength">
+                <div className={`strength-bar ${strength >= 1 ? 'active' : ''}`}></div>
+                <div className={`strength-bar ${strength >= 2 ? 'active' : ''}`}></div>
+                <div className={`strength-bar ${strength >= 3 ? 'active' : ''}`}></div>
+              </div>
             </div>
+            
+            <button type="submit" className="btn-primary-glow full-width mt-4" disabled={loading}>
+              {loading ? 'Creating account...' : 'Create Account'}
+            </button>
+          </form>
+          
+          <div className="auth-switch">
+            Already have an account? <Link to="/login">Sign In</Link>
           </div>
-
-          <div className="form-group">
-            <label htmlFor="confirmPassword">Confirm Password</label>
-            <div className="input-wrapper">
-              <Lock className="input-icon" size={18} />
-              <input
-                id="confirmPassword"
-                type={showConfirmPassword ? 'text' : 'password'}
-                required
-                autoComplete="new-password"
-                placeholder="Re-enter your password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-              />
-              <button
-                type="button"
-                className="password-toggle-btn"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-              >
-                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-          </div>
-
-          <button type="submit" disabled={loading || success} className="btn-primary btn-block mt-2">
-            {loading ? (
-              <>
-                <Loader2 size={18} className="spinner-icon-inline" />
-                <span>Creating Account...</span>
-              </>
-            ) : (
-              <>
-                <UserPlus size={18} />
-                <span>Register Account</span>
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="auth-footer">
-          <p>
-            Already have an account?{' '}
-            <Link to="/login" className="auth-link">
-              Sign In
-            </Link>
-          </p>
         </div>
       </div>
     </div>
